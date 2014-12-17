@@ -1,0 +1,47 @@
+From: Dmitry Piotrovsky <hidden email>
+Date: Fr, 19 Sep 2014 18:59:34
+Subject: [PATCH] prevent deadlocks in xen-netfront.c
+--- a/drivers/net/xen-netfront.c	2014-09-28 14:29:07.000000000 -0700
++++ b/drivers/net/xen-netfront.c	2014-10-01 00:41:19.629581110 -0700
+@@ -959,6 +959,7 @@
+ 	struct netfront_stats *stats = this_cpu_ptr(queue->info->stats);
+ 	int packets_dropped = 0;
+ 	struct sk_buff *skb;
++	unsigned long flags;
+ 
+ 	while ((skb = __skb_dequeue(rxq)) != NULL) {
+ 		int pull_to = NETFRONT_SKB_CB(skb)->pull_to;
+@@ -977,10 +978,12 @@
+ 			continue;
+ 		}
+ 
++               local_irq_save(flags);
+ 		u64_stats_update_begin(&stats->syncp);
+ 		stats->rx_packets++;
+ 		stats->rx_bytes += skb->len;
+ 		u64_stats_update_end(&stats->syncp);
++		local_irq_restore(flags);
+ 
+ 		/* Pass it up. */
+ 		napi_gro_receive(&queue->napi, skb);
+@@ -1119,15 +1122,18 @@
+ 		struct netfront_stats *stats = per_cpu_ptr(np->stats, cpu);
+ 		u64 rx_packets, rx_bytes, tx_packets, tx_bytes;
+ 		unsigned int start;
++		unsigned long flags;
+ 
++		local_irq_save(flags);
+ 		do {
+-			start = u64_stats_fetch_begin_irq(&stats->syncp);
++			start = u64_stats_fetch_begin(&stats->syncp);
+ 
+ 			rx_packets = stats->rx_packets;
+ 			tx_packets = stats->tx_packets;
+ 			rx_bytes = stats->rx_bytes;
+ 			tx_bytes = stats->tx_bytes;
+-		} while (u64_stats_fetch_retry_irq(&stats->syncp, start));
++		} while (u64_stats_fetch_retry(&stats->syncp, start));
++		local_irq_restore(flags);
+ 
+ 		tot->rx_packets += rx_packets;
+ 		tot->tx_packets += tx_packets;

@@ -1,0 +1,119 @@
+--- arch/arm/lib/bootm.c	2014-07-23 23:13:59.897945000 -0700
++++ arch/arm/lib/bootm.c	2014-07-24 01:43:05.568056204 -0800
+@@ -9,6 +9,13 @@
+  *
+  * Copyright (C) 2001  Erik Mouw (J.A.K.Mouw@its.tudelft.nl)
+  *
++ * Contains parts of experimental patch done by
++ * HYP entry (C) 2012  Ian Molton <[hidden email]>
++ *                and  Clemens Fischer <[hidden email]>
++ *           (C) 2013 Alexander Tarasikov <[hidden email]>
++ *           (C) 2014 Dmitry Piotrovsky <[hidden email]>
++ *           
++ *
+  * SPDX-License-Identifier:	GPL-2.0+
+  */
+ 
+@@ -30,6 +37,93 @@
+ 
+ static struct tag *params;
+ 
++/*
++ * function called by cpu 1 after wakeup
++ */
++extern void __hyp_init_sec(void);
++
++asm (
++ ".pushsection .text\n"
++ ".global __hyp_init_sec\n"
++ "__hyp_init_sec:\n"
++ "ldr r12, =0x102\n"
++ "adr r0, hyp_init_cont\n"
++ "dsb\n"
++ "isb\n"
++ "dmb\n"
++ ".arch_extension sec\n"
++ "smc #0\n"
++ "hyp_init_cont: ldr r1, =0x48281800\n" // AUX_CORE_BOOT_0
++ "mov r2, #0\n"
++ "str r2, [r1, #4]\n"
++ "dsb\n"
++ "isb\n"
++ "dmb\n"
++ "wait: wfe\n"
++ "ldr r2, [r1, #4]\n"
++ "cmp r2, #0\n"
++ "movne pc, r2\n"
++ "b wait\n"
++ ".popsection\n"
++);
++
++/*
++ * Enable HYP mode on the OMAP5 CPU
++ *
++ * FIXME: this needs to test to make sure its running on an OMAP5
++ *
++ * We wake up CPU1 at __hyp_init_sec which allows us to put it into HYP
++ * mode.
++ *
++ * CPU1 then clears AUX_CORE_BOOT_0 and enters WFE, until the kernel wakes it.
++ *
++ * In order to avoid CPU1 continuing execution on just about any event, we
++ * wait for AUX_CORE_BOOT_0 to contain a non-zero address, at which point
++ * we continue execution at that address.
++ *
++ */
++
++static void hyp_enable(void) {
++ /*Wake up CPU1 and enable HYP on CPU0. */
++ asm(
++ "ldr r1, =0x48281800\n"     // AUX_CORE_BOOT_1
++ "ldr r2, =__hyp_init_sec\n"
++ "str r2, [r1, #4]\n"
++ "mov r2, #0x20\n"
++ "str r2, [r1]\n"            // AUX_CORE_BOOT_0
++ "isb\n"
++ "dmb\n"
++ "dsb\n"
++ "sev\n"                     // Wake CPU1
++ "adr r1, hyp_stack\n"
++ "stm r1, {r4-r14}\n" //save registers on the temporary stack
++ "ldr r12, =0x102\n" //start hypervisor SMC code
++ "adr r0, hyp_ena_cont\n" //address after SMC instruction
++ "dsb\n"
++ "isb\n"
++ "dmb\n"
++ ".arch_extension sec\n"
++ "smc #0\n"                 // CPU0 -> HYP mode
++ "hyp_stack:\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ ".word 0x0\n"
++ "hyp_ena_cont: adr r1,hyp_stack\n"
++ "ldm   r1, {r4-r14}\n"
++ :::"r0", "r1", "r2", "r3", "cc", "memory"
++ );
++};
++
++
++
+ static ulong get_sp(void)
+ {
+ 	ulong ret;
+@@ -287,6 +381,8 @@
+ 	else
+ 		r2 = gd->bd->bi_boot_params;
+ 
++	hyp_enable();
++
+ 	if (!fake)
+ 		kernel_entry(0, machid, r2);
+ #endif

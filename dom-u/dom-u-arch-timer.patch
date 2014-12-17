@@ -1,0 +1,19 @@
+## this ugly patch done for enabling dom-0 like configuration for dom-u VM's
+## specific for omap5432 uevm board only
+## dpiotrov 30-09-2014.
+--- drivers/clocksource/arm_arch_timer.c	2014-09-29 00:29:07.000000000 +0300
++++ drivers/clocksource/arm_arch_timer.c	2014-09-30 16:01:01.311831766 +0300
+@@ -347,8 +347,11 @@
+ 	}
+ 
+ 	/* Check the timer frequency. */
+-	if (arch_timer_rate == 0)
+-		pr_warn("Architected timer frequency not available\n");
++	if (arch_timer_rate == 0){
++			pr_warn("Architected timer frequency not available\n");
++			pr_warn("[dpiotrov:] set up arch_timer_rate to <6144000> by force\n");
++			arch_timer_rate = (u32)6144000;
++		}
+ }
+ 
+ static void arch_timer_banner(unsigned type)

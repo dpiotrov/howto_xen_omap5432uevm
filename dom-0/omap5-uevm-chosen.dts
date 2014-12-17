@@ -1,0 +1,26 @@
+/*
+ * This File add XEN boot configuration part to the omap5-uevm.dtb
+ * done by dpiotrov 18-08-14
+
+ * This is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+*/
+
+/ {
+	model = "TI OMAP5 uEVM board";
+	compatible = "ti,omap5-uevm", "ti,omap5";
+	chosen {
+		xen,dom0-bootargs = "console=hvc0,115200n8 silent root=/dev/mmcblk0p2 rw rootwait fixrtc";		
+		xen,xen-bootargs = "console=dtuart dtuart=serial2 loglvl=all guest_loglvl=all dom0_mem=256M";		
+		modules {
+			#address-cells = <0x00000001>;			
+			#size-cells = <0x00000001>;
+			module@0 {
+				reg = <0xa0000000 0xa00000>;
+				compatible = "xen,linux-zimage", "xen,multiboot-module";				
+			};
+		};
+	};
+};
